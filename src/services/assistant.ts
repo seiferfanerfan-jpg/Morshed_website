@@ -5,6 +5,8 @@ export type AssistantMessage = {
   text: string;
 };
 
+export type AssistantMode = 'chat' | 'quiz';
+
 type ChatResponse = {
   reply?: string;
   error?: string;
@@ -21,11 +23,11 @@ export async function getAssistantStatus(): Promise<boolean> {
   }
 }
 
-export async function sendToAssistant(message: string, history: AssistantMessage[]): Promise<string> {
+export async function sendToAssistant(message: string, history: AssistantMessage[], mode: AssistantMode = 'chat'): Promise<string> {
   const response = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept: 'application/json' },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({ message, history, mode }),
   });
   const result = await response.json() as ChatResponse;
   if (!response.ok || typeof result.reply !== 'string') {

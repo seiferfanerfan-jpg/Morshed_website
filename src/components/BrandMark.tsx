@@ -1,10 +1,11 @@
 type BrandMarkProps = {
   compact?: boolean;
+  markOnly?: boolean;
 };
 
-export default function BrandMark({ compact = false }: BrandMarkProps) {
+export default function BrandMark({ compact = false, markOnly = false }: BrandMarkProps) {
   return (
-    <a className={`brand-mark${compact ? ' brand-mark--compact' : ''}`} href="#home" aria-label="SEIFAi — مرشد AI، الصفحة الرئيسية">
+    <a className={`brand-mark${compact ? ' brand-mark--compact' : ''}${markOnly ? ' brand-mark--mark-only' : ''}`} href="#home" aria-label="مرشد AI، الصفحة الرئيسية">
       <span className="brand-mark__symbol" aria-hidden="true">
         <svg viewBox="0 0 40 40" fill="none">
           <path d="M10.5 28.5c3.2-8.4 7-13.1 11.5-13.1 4.1 0 6.8 3.6 7.5 8.1" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
@@ -13,10 +14,10 @@ export default function BrandMark({ compact = false }: BrandMarkProps) {
           <path d="M29.5 7.2V5M35 12.5h2.2M24 12.5h-2.2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       </span>
-      <span className="brand-mark__wording">
+      {!markOnly && <span className="brand-mark__wording">
         <span className="brand-mark__name">مرشد AI</span>
         {!compact && <span className="brand-mark__subname">SEIFAi</span>}
-      </span>
+      </span>}
     </a>
   );
 }
