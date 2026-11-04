@@ -2,7 +2,7 @@ const MAX_MESSAGE_CHARS = 4000;
 const MAX_HISTORY_MESSAGES = 10;
 const MAX_HISTORY_CHARS = 12000;
 const MAX_OUTPUT_TOKENS = 512;
-const MODEL = "gemini-2.5-flash";
+const MODEL = "gemini-3.5-flash-lite";
 
 function json(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -71,13 +71,14 @@ export async function onRequestPost({ request, env }) {
   const result = await upstream.json().catch(() => ({}));
   if (!upstream.ok) {
     const googleCode = result?.error?.code;
+    const googleStatus = result?.error?.status;
     if (upstream.status === 429 || googleCode === 429) {
       return json({ error: "وصلت خدمة Gemini إلى حد الاستخدام المتاح حاليًا. لن نحاول التحويل إلى خطة مدفوعة؛ جرّب بعد تجدد الحصة." }, 429);
     }
     if (upstream.status === 401 || upstream.status === 403) {
       return json({ error: "مفتاح Gemini غير صالح أو لا يملك صلاحية استخدام الخدمة." }, 502);
     }
-    return json({ error: "لم يتمكن Gemini من إكمال الطلب. حاول مرة أخرى لاحقًا." }, 502);
+    return json({ error: "لم يتمكن Gemini من إكمال الطلب. حاول مرة أخرى لاحقًا.", providerStatus: googleStatus || `HTTP ${upstream.status}` }, 502);
   }
 
   const reply = (result?.candidates?.[0]?.content?.parts ?? [])
