@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    {
+      "source": "/api/chat",
+      "destination": "https://morshed-ai-8vu.pages.dev/api/chat"
+    }
+  ]
+}
