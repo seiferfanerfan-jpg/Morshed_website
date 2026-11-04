@@ -39,3 +39,11 @@ npx wrangler pages deploy dist --project-name=morshed-ai --branch=main
 ## حالة تكلفة AI
 
 لم يتم تفعيل Workers AI أو إرسال أي طلبات استدلال. يلزم اختيار مزوّد الخدمة والموافقة على أي استخدام محسوب، أو تزويدي بمواصفات API الخاصة بك.
+
+## ربط Gemini بأمان
+
+يستخدم الخادم Cloudflare Pages Function في `functions/api/chat.js`، وتُرسل الرسائل إلى Gemini من الخادم فقط. لا تضع مفتاح API في ملفات الواجهة أو GitHub.
+
+قبل تفعيل المحادثة، أنشئ مفتاحًا مقيّدًا بـGemini API، ثم أضفه في Cloudflare Pages > المشروع `morshed-ai` > Settings > Variables and Secrets كـ **Secret** باسم `GEMINI_API_KEY`، وبعدها أعد نشر التطبيق. النموذج المحدد هو `gemini-2.5-flash`، مع حد 512 رمزًا للإجابة وسجل محادثة قصير.
+
+حصة Gemini المجانية وحدودها يحددها حساب Google وقد تختلف عن حصة Cloudflare. راجع التسعير وحدود المشروع في Google AI Studio؛ الكود لا يحوّل إلى مزوّد أو خطة مدفوعة عند تلقي حدّ الاستخدام.
