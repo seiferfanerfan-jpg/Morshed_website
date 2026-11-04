@@ -5,10 +5,9 @@ import { getAssistantStatus, sendToAssistant, type AssistantMessage } from '../s
 
 const conversationsKey = 'morshed-conversations-v1';
 const timerKey = 'morshed-study-timer-v1';
-const timerOptions = [8, 45, 60];
 const suggestions = ['اشرح لي فكرة معقدة ببساطة', 'ساعدني في كتابة رسالة واضحة', 'رتّب أفكاري في خطة عملية'];
 
-type ActiveTimer = { deadline: number; durationMinutes: number; conversationId: string };
+type ActiveTimer = { deadline: number; durationMinutes: number; conversationId: string; sessionName: string };
 
 function newId() {
   return globalThis.crypto?.randomUUID?.() ?? `chat-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -40,7 +39,8 @@ function loadTimer(): ActiveTimer | null {
     const value = window.localStorage.getItem(timerKey);
     if (!value) return null;
     const parsed = JSON.parse(value) as ActiveTimer;
-    return parsed.conversationId && Number.isFinite(parsed.deadline) ? parsed : null;
+    if (!parsed.conversationId || !Number.isFinite(parsed.deadline)) return null;
+    return { ...parsed, sessionName: typeof parsed.sessionName === 'string' && parsed.sessionName.trim() ? parsed.sessionName : 'جلسة تركيز' };
   } catch {
     return null;
   }
@@ -58,15 +58,26 @@ function isQuizRequest(text: string) {
 }
 
 function isTimerRequest(text: string) {
-  return /(مؤقّت|مؤقت|تايمر)/u.test(text);
+  return /(مؤقّ?ت|موقت|تايمر|timer|pomodoro|(?:ال)?ب?مودورو|(?:ال)?ب?ومودورو|جلسة\s*(?:تركيز|دراسة))/iu.test(text);
 }
 
-function requestedMinutes(text: string) {
-  const normalized = text.replace(/[٠-٩]/gu, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)));
-  if (/60\s*(دقيق|دقايق|دقيقة)|ساعة|ستين|ستون/u.test(normalized)) return 60;
-  if (/45\s*(دقيق|دقايق|دقيقة)|خمسة\s*وأربعين|خمسه\s*واربعين/u.test(normalized)) return 45;
-  if (/8\s*(دقيق|دقايق|دقيقة)|ثمانية|تمانية/u.test(normalized)) return 8;
-  return 8;
+function requestedMinutes(text: string): number | null {
+  const normalized = text
+    .replace(/[٠-٩]/gu, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
+    .replace(/[۰-۹]/gu, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)));
+  if (/ربع\s*ساعة/u.test(normalized)) return 15;
+  if (/(?:نص|نصف)\s*ساعة/u.test(normalized)) return 30;
+
+  const hours = normalized.match(/(\d{1,3})\s*ساع(?:ة|ه|ات)/u);
+  if (hours) return Number(hours[1]) * 60;
+
+  const minutes = normalized.match(/(\d{1,5})\s*(?:دقيق(?:ة|ه|تين)?|دقايق|دقائق|min(?:ute)?s?)/iu);
+  if (minutes) return Number(minutes[1]);
+
+  const duration = normalized.match(/(?:مدة|لمدة|مدتها|بمدة|مؤقّ?ت|موقت|تايمر|pomodoro|مودورو|بومودورو)[^\d]{0,24}(\d{1,5})/iu);
+  if (duration) return Number(duration[1]);
+  if (/ساعة|ستين|ستون/u.test(normalized)) return 60;
+  return null;
 }
 
 function playTimerChime() {
@@ -101,7 +112,8 @@ export default function ChatPanel() {
   const [isSending, setIsSending] = useState(false);
   const [quizMode, setQuizMode] = useState(false);
   const [showTimerCard, setShowTimerCard] = useState(false);
-  const [timerMinutes, setTimerMinutes] = useState(8);
+  const [timerName, setTimerName] = useState('');
+  const [timerMinutes, setTimerMinutes] = useState('');
   const [activeTimer, setActiveTimer] = useState<ActiveTimer | null>(loadTimer);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -156,11 +168,13 @@ export default function ChatPanel() {
 
       setActiveTimer(null);
       try { window.localStorage.removeItem(timerKey); } catch { /* تجاهل تعذّر التخزين */ }
-      const endingMessage: AssistantMessage = { role: 'model', text: 'خلص وقت الجلسة. تحب نبدأ جلسة تانية؟' };
+      const endingMessage: AssistantMessage = { role: 'model', text: `خلص وقت جلسة «${activeTimer.sessionName}». تحب نبدأ جلسة تانية؟` };
       appendToConversation(activeTimer.conversationId, [endingMessage]);
+      setTimerName('');
+      setTimerMinutes('');
       playTimerChime();
       if ('Notification' in window && Notification.permission === 'granted') {
-        new Notification('انتهى المؤقّت', { body: 'خلص وقت الجلسة. تقدر تبدأ جلسة جديدة لما تحب.' });
+        new Notification('انتهى المؤقّت', { body: `خلص وقت جلسة «${activeTimer.sessionName}». تقدر تبدأ جلسة جديدة لما تحب.` });
       }
     };
     tick();
@@ -178,28 +192,30 @@ export default function ChatPanel() {
     event.preventDefault();
     const message = draft.trim();
     if (!message || isSending) return;
-    if (!isConfigured) {
+    const startsQuiz = isQuizRequest(message);
+    const asksForTimer = isTimerRequest(message);
+    if (!isConfigured && !asksForTimer) {
       setNotice('المحادثة مش متاحة دلوقتي. جرّب تاني بعد شوية.');
       return;
     }
 
     const conversationId = activeId;
     const priorMessages = messages.slice(-10);
-    const startsQuiz = isQuizRequest(message);
-    const asksForTimer = isTimerRequest(message);
     setNotice('');
     setDraft('');
     setIsSending(true);
     saveUserMessage(conversationId, message);
 
     if (asksForTimer) {
-      setTimerMinutes(requestedMinutes(message));
+      const minutes = requestedMinutes(message);
+      setTimerMinutes(minutes === null ? '' : String(minutes));
+      setTimerName('');
       setShowTimerCard(true);
     }
     if (startsQuiz) setQuizMode(true);
 
     if (asksForTimer && !startsQuiz) {
-      appendToConversation(conversationId, [{ role: 'model', text: 'حاضر، اختار مدة المؤقّت من الكارت اللي ظاهر قدامك، ولما تكون جاهز دوس «ابدأ المؤقّت».' }]);
+      appendToConversation(conversationId, [{ role: 'model', text: 'حاضر. نسمي الجلسة إيه؟ والمدة كام دقيقة؟ اكتب الاسم وأي عدد دقائق يناسبك في الكارت، وبعدها ابدأ المؤقّت.' }]);
       setIsSending(false);
       return;
     }
@@ -222,6 +238,8 @@ export default function ChatPanel() {
     setActiveId(fresh.id);
     setQuizMode(false);
     setShowTimerCard(false);
+    setTimerName('');
+    setTimerMinutes('');
     setHistoryOpen(false);
     setNotice('');
   };
@@ -248,12 +266,23 @@ export default function ChatPanel() {
   };
 
   const startTimer = async () => {
+    const sessionName = timerName.trim();
+    const durationMinutes = Number(timerMinutes);
+    if (!sessionName) {
+      setNotice('اكتب اسم الجلسة الأول.');
+      return;
+    }
+    if (!/^\d+$/.test(timerMinutes) || !Number.isInteger(durationMinutes) || durationMinutes < 1 || durationMinutes > 1440) {
+      setNotice('اكتب مدة صحيحة من دقيقة واحدة لحد ١٤٤٠ دقيقة.');
+      return;
+    }
     if ('Notification' in window && Notification.permission === 'default') {
       try { await Notification.requestPermission(); } catch { /* يظل صوت الصفحة والتنبيه المرئي متاحين */ }
     }
-    const next: ActiveTimer = { deadline: Date.now() + timerMinutes * 60_000, durationMinutes: timerMinutes, conversationId: activeId };
+    const next: ActiveTimer = { deadline: Date.now() + durationMinutes * 60_000, durationMinutes, conversationId: activeId, sessionName };
     setActiveTimer(next);
-    setRemainingSeconds(timerMinutes * 60);
+    setRemainingSeconds(durationMinutes * 60);
+    setNotice('');
     try { window.localStorage.setItem(timerKey, JSON.stringify(next)); } catch { /* يبقى المؤقّت فعالًا للجلسة الحالية */ }
     setShowTimerCard(true);
   };
@@ -321,28 +350,34 @@ export default function ChatPanel() {
         )}
 
         {showTimerCard && (!activeTimer || activeTimer.conversationId === activeId) && (
-          <section className="timer-card" aria-label="اختيار مدة المؤقّت">
+          <section className="timer-card" aria-label="إعداد مؤقّت مودورو">
             <div className="timer-card__top">
-              <div><p className="timer-card__eyebrow">جلسة تركيز</p><h2>{activeTimer ? 'المؤقّت شغّال' : 'اختار مدة المؤقّت'}</h2></div>
+              <div><p className="timer-card__eyebrow">جلسة تركيز</p><h2>{activeTimer ? `جلسة «${activeTimer.sessionName}» شغّالة` : 'سمّي الجلسة وحدد مدتها'}</h2></div>
               {activeTimer?.conversationId === activeId && <strong className="timer-card__countdown" aria-live="polite" dir="ltr">{formatTime(remainingSeconds)}</strong>}
             </div>
-            <div className="timer-options">
-              {timerOptions.map((minutes) => (
-                <button className={`timer-option${timerMinutes === minutes ? ' timer-option--selected' : ''}`} type="button" key={minutes} onClick={() => setTimerMinutes(minutes)} disabled={Boolean(activeTimer)}>
-                  <strong>{minutes}</strong><span>دقيقة</span>
-                </button>
-              ))}
-            </div>
+            {activeTimer ? <p className="timer-card__hint">المدة: {activeTimer.durationMinutes} دقيقة. هيظهر لك تنبيه وصوت لما الوقت يخلص.</p> : (
+              <div className="timer-card__fields">
+                <label className="timer-field" htmlFor="timer-session-name">
+                  <span>نسمي الجلسة إيه؟</span>
+                  <input id="timer-session-name" type="text" value={timerName} maxLength={64} placeholder="مثال: مذاكرة الرياضيات" onChange={(event) => { setTimerName(event.target.value); if (notice) setNotice(''); }} />
+                </label>
+                <label className="timer-field" htmlFor="timer-duration-minutes">
+                  <span>المدة كام دقيقة؟</span>
+                  <input id="timer-duration-minutes" type="number" min={1} max={1440} step={1} inputMode="numeric" value={timerMinutes} placeholder="اكتب أي عدد" onChange={(event) => { setTimerMinutes(event.target.value); if (notice) setNotice(''); }} />
+                </label>
+                <p className="timer-card__hint">اكتب أي مدة من دقيقة واحدة لحد ١٤٤٠ دقيقة.</p>
+              </div>
+            )}
             <div className="timer-card__actions">
-              {activeTimer ? <span className="timer-card__hint">هيظهر لك تنبيه وصوت لما الوقت يخلص.</span> : <button className="timer-start" type="button" onClick={() => void startTimer()}>ابدأ المؤقّت</button>}
-              {activeTimer && <button className="timer-close" type="button" onClick={() => { setActiveTimer(null); try { window.localStorage.removeItem(timerKey); } catch { /* تجاهل */ } }}>إيقاف</button>}
+              {!activeTimer && <button className="timer-start" type="button" onClick={() => void startTimer()} disabled={!timerName.trim() || !/^\d+$/.test(timerMinutes) || Number(timerMinutes) < 1 || Number(timerMinutes) > 1440}>ابدأ الجلسة</button>}
+              {activeTimer && <button className="timer-close" type="button" onClick={() => { setActiveTimer(null); setTimerName(''); setTimerMinutes(''); try { window.localStorage.removeItem(timerKey); } catch { /* تجاهل */ } }}>إيقاف</button>}
               {!activeTimer && <button className="timer-close" type="button" onClick={() => setShowTimerCard(false)}>إخفاء</button>}
             </div>
           </section>
         )}
 
         {activeTimer && activeTimer.conversationId !== activeId && (
-          <button className="timer-running-pill" type="button" onClick={() => { setActiveId(activeTimer.conversationId); setShowTimerCard(true); }}>فيه مؤقّت شغّال · {formatTime(remainingSeconds)}</button>
+          <button className="timer-running-pill" type="button" onClick={() => { setActiveId(activeTimer.conversationId); setShowTimerCard(true); }}>جلسة «{activeTimer.sessionName}» شغّالة · {formatTime(remainingSeconds)}</button>
         )}
 
         <form className="composer" onSubmit={handleSubmit}>
