@@ -58,10 +58,10 @@ function isQuizRequest(text: string) {
 }
 
 function isTimerRequest(text: string) {
-  return /(مؤقّ?ت|موقت|تايمر|timer|pomodoro|(?:ال)?ب?مودورو|(?:ال)?ب?ومودورو|جلسة\s*(?:تركيز|دراسة))/iu.test(text);
+  return /(مؤقّ?ت|موقت|تايمر|timer|pomodoro|(?:ال)?ب?مودورو|(?:ال)?ب?ومودورو|جلسة\s*(?:تركيز|دراسة|مذاكرة|قراءة))/iu.test(text);
 }
 
-function requestedMinutes(text: string): number | null {
+function requestedMinutes(text: string, acceptBareNumber = false): number | null {
   const normalized = text
     .replace(/[٠-٩]/gu, (digit) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(digit)))
     .replace(/[۰-۹]/gu, (digit) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(digit)));
@@ -76,8 +76,25 @@ function requestedMinutes(text: string): number | null {
 
   const duration = normalized.match(/(?:مدة|لمدة|مدتها|بمدة|مؤقّ?ت|موقت|تايمر|pomodoro|مودورو|بومودورو)[^\d]{0,24}(\d{1,5})/iu);
   if (duration) return Number(duration[1]);
+  if (acceptBareNumber) {
+    const bareNumber = normalized.trim().match(/(?:(?:المدة|مدتها|مدة|خليها|عايزها)\s*)?(\d{1,5})\s*$/u);
+    if (bareNumber) return Number(bareNumber[1]);
+  }
   if (/ساعة|ستين|ستون/u.test(normalized)) return 60;
   return null;
+}
+
+function sessionNameFromReply(text: string) {
+  const name = text
+    .replace(/(?:ربع|نص|نصف)\s*ساعة/giu, ' ')
+    .replace(/(?:لمدة|مدتها|بمدة|مدة)?\s*\d{1,5}\s*(?:دقيق(?:ة|ه|تين)?|دقايق|دقائق|min(?:ute)?s?)?/giu, ' ')
+    .replace(/^(?:حاضر|تمام)[،,:：\s]*/u, '')
+    .replace(/^(?:(?:اسم(?:\s+الجلسة|ها)?|اسميها|سمها|سميها|خلّي\s+اسمها|خلي\s+اسمها)\s*[:：\-]?\s*)/u, '')
+    .replace(/^(?:خلي\s+المدة|المدة|مدتها|مدة|خليها|عايزها)\s*/u, '')
+    .replace(/[،,:：.!؟؛\s]+$/u, '')
+    .trim();
+  if (!name || /^(?:خلي|المدة|مدتها|مدة|دقيقة|دقايق|دقائق)$/u.test(name)) return '';
+  return name.slice(0, 64);
 }
 
 function playTimerChime() {
@@ -112,6 +129,7 @@ export default function ChatPanel() {
   const [isSending, setIsSending] = useState(false);
   const [quizMode, setQuizMode] = useState(false);
   const [showTimerCard, setShowTimerCard] = useState(false);
+  const [timerSetupPending, setTimerSetupPending] = useState(false);
   const [timerName, setTimerName] = useState('');
   const [timerMinutes, setTimerMinutes] = useState('');
   const [activeTimer, setActiveTimer] = useState<ActiveTimer | null>(loadTimer);
@@ -170,6 +188,7 @@ export default function ChatPanel() {
       try { window.localStorage.removeItem(timerKey); } catch { /* تجاهل تعذّر التخزين */ }
       const endingMessage: AssistantMessage = { role: 'model', text: `خلص وقت جلسة «${activeTimer.sessionName}». تحب نبدأ جلسة تانية؟` };
       appendToConversation(activeTimer.conversationId, [endingMessage]);
+      setTimerSetupPending(false);
       setTimerName('');
       setTimerMinutes('');
       playTimerChime();
@@ -210,9 +229,36 @@ export default function ChatPanel() {
       const minutes = requestedMinutes(message);
       setTimerMinutes(minutes === null ? '' : String(minutes));
       setTimerName('');
+      setTimerSetupPending(true);
       setShowTimerCard(true);
     }
     if (startsQuiz) setQuizMode(true);
+
+    if (timerSetupPending && !asksForTimer && !startsQuiz) {
+      const suppliedMinutes = requestedMinutes(message, true);
+      const suppliedName = sessionNameFromReply(message);
+      const nextMinutes = suppliedMinutes === null ? timerMinutes : String(suppliedMinutes);
+      const nextName = suppliedName || timerName;
+      if (suppliedMinutes !== null) setTimerMinutes(nextMinutes);
+      if (suppliedName) setTimerName(suppliedName);
+
+      const duration = Number(nextMinutes);
+      const hasDuration = /^\d+$/.test(nextMinutes) && Number.isInteger(duration) && duration >= 1 && duration <= 1440;
+      let prompt: string;
+      if (suppliedMinutes !== null && !hasDuration) {
+        prompt = 'المدة لازم تكون عدد صحيح من دقيقة واحدة لحد ١٤٤٠ دقيقة. اكتب الرقم تاني، أو عدّله من الكارت.';
+      } else if (!nextName) {
+        prompt = hasDuration ? `تمام، المدة ${duration} دقيقة. نسمي الجلسة إيه؟` : 'نسمي الجلسة إيه؟ وقولي كمان المدة بأي عدد دقائق يناسبك.';
+      } else if (!hasDuration) {
+        prompt = `تمام، هنسميها «${nextName}». المدة كام دقيقة؟`;
+      } else {
+        prompt = `تمام، جهّزت جلسة «${nextName}» لمدة ${duration} دقيقة. دوس «ابدأ الجلسة» من الكارت لما تكون جاهز.`;
+      }
+      appendToConversation(conversationId, [{ role: 'model', text: prompt }]);
+      setTimerSetupPending(!nextName || !hasDuration);
+      setIsSending(false);
+      return;
+    }
 
     if (asksForTimer && !startsQuiz) {
       appendToConversation(conversationId, [{ role: 'model', text: 'حاضر. نسمي الجلسة إيه؟ والمدة كام دقيقة؟ اكتب الاسم وأي عدد دقائق يناسبك في الكارت، وبعدها ابدأ المؤقّت.' }]);
@@ -238,6 +284,7 @@ export default function ChatPanel() {
     setActiveId(fresh.id);
     setQuizMode(false);
     setShowTimerCard(false);
+    setTimerSetupPending(false);
     setTimerName('');
     setTimerMinutes('');
     setHistoryOpen(false);
@@ -283,6 +330,7 @@ export default function ChatPanel() {
     setActiveTimer(next);
     setRemainingSeconds(durationMinutes * 60);
     setNotice('');
+    setTimerSetupPending(false);
     try { window.localStorage.setItem(timerKey, JSON.stringify(next)); } catch { /* يبقى المؤقّت فعالًا للجلسة الحالية */ }
     setShowTimerCard(true);
   };
@@ -370,8 +418,8 @@ export default function ChatPanel() {
             )}
             <div className="timer-card__actions">
               {!activeTimer && <button className="timer-start" type="button" onClick={() => void startTimer()} disabled={!timerName.trim() || !/^\d+$/.test(timerMinutes) || Number(timerMinutes) < 1 || Number(timerMinutes) > 1440}>ابدأ الجلسة</button>}
-              {activeTimer && <button className="timer-close" type="button" onClick={() => { setActiveTimer(null); setTimerName(''); setTimerMinutes(''); try { window.localStorage.removeItem(timerKey); } catch { /* تجاهل */ } }}>إيقاف</button>}
-              {!activeTimer && <button className="timer-close" type="button" onClick={() => setShowTimerCard(false)}>إخفاء</button>}
+              {activeTimer && <button className="timer-close" type="button" onClick={() => { setActiveTimer(null); setTimerSetupPending(false); setTimerName(''); setTimerMinutes(''); try { window.localStorage.removeItem(timerKey); } catch { /* تجاهل */ } }}>إيقاف</button>}
+              {!activeTimer && <button className="timer-close" type="button" onClick={() => { setShowTimerCard(false); setTimerSetupPending(false); }}>إخفاء</button>}
             </div>
           </section>
         )}
