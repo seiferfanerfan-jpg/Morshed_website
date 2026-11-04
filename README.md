@@ -25,7 +25,7 @@ npm run build
 
 ## النشر على Cloudflare Pages
 
-الموقع المنشور: https://morshed-ai.pages.dev/
+الموقع المنشور: https://morshed-ai-8vu.pages.dev/
 
 أنشئ المشروع كرفع مباشر باستخدام Wrangler. لإعادة النشر بعد تعديل الموقع، اضبط `CLOUDFLARE_API_TOKEN` و`CLOUDFLARE_ACCOUNT_ID` في بيئتك دون حفظهما في Git، ثم شغّل:
 
