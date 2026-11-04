@@ -52,7 +52,7 @@ export default function ChatPanel() {
     const message = draft.trim();
     if (!message || isSending) return;
     if (!isConfigured) {
-      setNotice('Gemini غير مهيّأ بعد. أضف مفتاح GEMINI_API_KEY السرّي إلى Cloudflare ثم أعد المحاولة.');
+      setNotice('المحادثة مش متاحة دلوقتي. جرّب تاني بعد شوية.');
       return;
     }
 
@@ -75,20 +75,26 @@ export default function ChatPanel() {
     <section className="chat-panel" aria-labelledby="welcome-title">
       <div className="chat-panel__welcome">
         <span className="assistant-orbit" aria-hidden="true"><SparkleIcon /></span>
-        <p className="eyebrow">مساحة مرشد</p>
-        <h1 id="welcome-title">أهلًا، أنا <span>مرشد</span></h1>
-        <p className="welcome-copy">ما الفكرة التي تحب أن نبدأ بها اليوم؟</p>
+        <p className="eyebrow">مرشد _ S7 · نموذج فرعي من مرشد AI</p>
+        <h1 id="welcome-title">أهلًا، أنا <span>راشد</span></h1>
+        <p className="welcome-copy">مساعدك في الكلام والأفكار، وأنا جزء من تطبيق مرشد.</p>
       </div>
+
+      <aside className="assistant-about" aria-label="عن راشد ومرشد AI">
+        <p><strong>أنا راشد:</strong> للتجربة الحوارية ومساعدتك في أسئلتك وأفكارك. ممكن أغلط، فراجع ورايا في المعلومات المهمة.</p>
+        <p><strong>مرشد AI داخل التطبيق:</strong> للتنبيهات والتذكيرات والتكامل مع التطبيق. قسم الصور ونسخ صور الهاتف من المزايا المقصودة، لكن توافرها وسعة التخزين لازم يتأكدوا بعد التنفيذ. تسجيل المحاضرات وتدوينها وتلخيصها، ودعم الصور والملفات والتسجيلات الصوتية، لسه قيد التطوير.</p>
+        <p className="assistant-about__origin">طوّر التطبيق فريق مرشد AI بقيادة سيف عرفان، واتعملت فكرته بمحبة بين سيف وحبيبته.</p>
+      </aside>
 
       {messages.length > 0 && (
         <div className="conversation" ref={conversationRef} aria-live="polite" aria-label="المحادثة">
           {messages.map((item, index) => (
             <article className={`conversation__message conversation__message--${item.role}`} key={`${index}-${item.role}`}>
-              <span className="conversation__speaker">{item.role === 'user' ? 'أنت' : 'مرشد'}</span>
+              <span className="conversation__speaker">{item.role === 'user' ? 'أنت' : 'راشد'}</span>
               <p>{item.text}</p>
             </article>
           ))}
-          {isSending && <p className="conversation__typing" role="status">مرشد يكتب ردًا…</p>}
+          {isSending && <p className="conversation__typing" role="status">راشد بيرد…</p>}
         </div>
       )}
 
@@ -122,11 +128,11 @@ export default function ChatPanel() {
         <div className="composer__toolbar">
           <div className="composer__status" id="composer-status">
             <span className={`status-dot${isConfigured ? ' status-dot--ready' : ''}`} aria-hidden="true" />
-            <span>{isConfigured ? 'متصل بـGemini' : 'بانتظار إعداد مفتاح Gemini'}</span>
+            <span>{isConfigured ? 'راشد جاهز للمحادثة' : 'المحادثة غير متاحة حاليًا'}</span>
           </div>
           <div className="composer__actions">
-            <span className="character-count" aria-live="polite">{draft.length > 0 ? `${draft.length}/4000` : 'Gemini'}</span>
-            <button className="send-button" type="submit" disabled={!draft.trim() || isSending} aria-label="إرسال إلى مرشد" title="إرسال إلى مرشد">
+            <span className="character-count" aria-live="polite">{draft.length > 0 ? `${draft.length}/4000` : 'راشد'}</span>
+            <button className="send-button" type="submit" disabled={!draft.trim() || isSending} aria-label="إرسال إلى راشد" title="إرسال إلى راشد">
               <SendIcon />
             </button>
           </div>
@@ -134,7 +140,7 @@ export default function ChatPanel() {
       </form>
 
       {notice && <p className="composer-notice" role="status">{notice}</p>}
-      <p className="privacy-note">يرسل مرشد رسائلك إلى Gemini للإجابة. لا تكتب معلومات سرية أو حساسة.</p>
+      <p className="privacy-note">راشد ممكن يغلط؛ راجع المعلومات المهمة قبل ما تعتمد عليها.</p>
     </section>
   );
 }

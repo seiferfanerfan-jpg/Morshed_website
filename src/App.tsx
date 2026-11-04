@@ -21,8 +21,8 @@ export default function App() {
           <BrandMark />
           <div className="topbar__right">
             <span className="beta-pill"><span className="beta-pill__dot" />نسخة أولية</span>
-            <button className="profile-button" type="button" aria-label="حساب مرشد" title="حساب مرشد">
-              م
+            <button className="profile-button" type="button" aria-label="حساب SEIFAi" title="حساب SEIFAi">
+              س
             </button>
           </div>
         </header>
@@ -33,7 +33,7 @@ export default function App() {
         </div>
 
         <footer className="app-footer">
-          <span>morshed_Ai</span>
+          <span>SEIFAi</span>
           <span className="footer-separator" aria-hidden="true">·</span>
           <span>مساعدك باللغة العربية</span>
         </footer>

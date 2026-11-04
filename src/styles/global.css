@@ -291,12 +291,43 @@ textarea:focus-visible {
   font-weight: 400;
 }
 
+.assistant-about {
+  width: min(100%, 740px);
+  margin: 20px auto 0;
+  padding: 15px 18px;
+  border: 1px solid rgba(60, 62, 71, 0.075);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.62);
+  color: #72747b;
+  font-size: 11px;
+  line-height: 1.9;
+  text-align: right;
+}
+
+.assistant-about p {
+  margin: 0;
+}
+
+.assistant-about p + p {
+  margin-top: 5px;
+}
+
+.assistant-about strong {
+  color: #454852;
+  font-weight: 650;
+}
+
+.assistant-about__origin {
+  color: #93949a;
+  font-size: 10px;
+}
+
 .suggestions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: 9px;
-  margin: 34px auto 18px;
+  margin: 20px auto 18px;
 }
 
 .suggestion-chip {

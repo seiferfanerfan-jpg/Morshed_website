@@ -183,7 +183,7 @@ export default function IntroSplash({ onComplete, onLeaving }: IntroSplashProps)
             <div className="intro-media-card__footer">
               <div className="intro-media-card__footer-copy">
                 <span>بداية هادئة، وأفكار أوضح</span>
-                <span className="intro-media-card__caption">morshed_Ai</span>
+                <span className="intro-media-card__caption">SEIFAi</span>
               </div>
               <div
                 className="intro-progress"
@@ -209,7 +209,7 @@ export default function IntroSplash({ onComplete, onLeaving }: IntroSplashProps)
       </section>
 
       <footer className="intro-premium__footer">
-        <span className="intro-premium__footer-brand">morshed_Ai</span>
+        <span className="intro-premium__footer-brand">SEIFAi</span>
         <span className="intro-premium__footer-line" aria-hidden="true" />
         <span>ابدأ بما يدور في بالك</span>
       </footer>

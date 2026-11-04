@@ -21,7 +21,7 @@ export async function onRequestGet({ env }) {
 
 export async function onRequestPost({ request, env }) {
   if (!env.GEMINI_API_KEY) {
-    return json({ error: "الخدمة غير مهيّأة بعد. أضف مفتاح Gemini السري إلى إعدادات Cloudflare." }, 503);
+    return json({ error: "المحادثة مش متاحة دلوقتي. جرّب تاني بعد شوية." }, 503);
   }
 
   let body;
@@ -58,33 +58,32 @@ export async function onRequestPost({ request, env }) {
       },
       body: JSON.stringify({
         systemInstruction: {
-          parts: [{ text: "أنت مرشد، مساعد ذكي يتحدث العربية بوضوح واحترام. أجب بلغة المستخدم، وكن دقيقًا ومفيدًا ومختصرًا. إذا لم تعرف، صرّح بذلك." }],
+          parts: [{ text: "أنت راشد، مساعد محادثة ونموذج فرعي من مرشد AI ضمن تطبيق مرشد _ S7. طوّر التطبيق فريق مرشد AI بقيادة المطور سيف عرفان، وفكرته اتعملت بمحبة بين سيف وحبيبته. تحدث حصريًا باللهجة المصرية العامية وبأسلوب قوي وواضح ومحترم، وكأنك شخص عربي مسلم، من غير كلمات أو عبارات بلغات تانية. ساعد المستخدم بإجابات واقعية ومفيدة، وقل بوضوح لما تكون مش متأكد أو ما تعرفش. نبّه المستخدم إن ردودك ممكن تحتوي على أخطاء، وخليه يراجع وراك المعلومات المهمة. لو سألك عن الفرق بينك وبين مرشد AI، وضّح إنك مخصص للتجربة الحوارية وإن مرشد AI داخل التطبيق مخصص للتنبيهات والتذكيرات والتكامل مع التطبيق. قسم الصور ونسخ صور الهاتف ضمن تصور التطبيق، لكن ما تأكدش إنه متاح حاليًا ولا وجود مساحة تخزين غير محدودة قبل ما تكون الميزة منفذة ومؤكدة. تسجيل المحاضرات وتدوينها وتلخيصها، ودعم الصور والملفات والتسجيلات الصوتية، مزايا قادمة ولسه مش متاحة؛ ما تدّعيش إنها شغالة دلوقتي. ما تكشفش تفاصيل الربط أو أسماء مزودي التقنية للمستخدم. لو اتسألت مين صنعك، جاوب: سيف عرفان." }],
         },
         contents,
         generationConfig: { maxOutputTokens: MAX_OUTPUT_TOKENS },
       }),
     });
   } catch {
-    return json({ error: "تعذّر الاتصال بخدمة Gemini الآن. حاول لاحقًا." }, 502);
+    return json({ error: "حصلت مشكلة مؤقتة وأنا بحاول أرد. جرّب تاني بعد شوية." }, 502);
   }
 
   const result = await upstream.json().catch(() => ({}));
   if (!upstream.ok) {
     const googleCode = result?.error?.code;
-    const googleStatus = result?.error?.status;
     if (upstream.status === 429 || googleCode === 429) {
-      return json({ error: "وصلت خدمة Gemini إلى حد الاستخدام المتاح حاليًا. لن نحاول التحويل إلى خطة مدفوعة؛ جرّب بعد تجدد الحصة." }, 429);
+      return json({ error: "المحادثة مش متاحة مؤقتًا. جرّب تاني بعد شوية." }, 429);
     }
     if (upstream.status === 401 || upstream.status === 403) {
-      return json({ error: "مفتاح Gemini غير صالح أو لا يملك صلاحية استخدام الخدمة." }, 502);
+      return json({ error: "حصلت مشكلة في المحادثة. جرّب تاني بعد شوية." }, 502);
     }
-    return json({ error: "لم يتمكن Gemini من إكمال الطلب. حاول مرة أخرى لاحقًا.", providerStatus: googleStatus || `HTTP ${upstream.status}` }, 502);
+    return json({ error: "ماقدرتش أكمل الرد دلوقتي. جرّب تاني بعد شوية." }, 502);
   }
 
   const reply = (result?.candidates?.[0]?.content?.parts ?? [])
     .map((part) => typeof part.text === "string" ? part.text : "")
     .join("")
     .trim();
-  if (!reply) return json({ error: "لم يُرجع Gemini نصًا. أعد صياغة سؤالك وحاول مرة أخرى." }, 502);
+  if (!reply) return json({ error: "ماوصلنيش رد واضح. جرّب تصيغ سؤالك بطريقة تانية." }, 502);
   return json({ reply });
 }
