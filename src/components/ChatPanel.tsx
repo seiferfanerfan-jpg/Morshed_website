@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import HistorySidebar, { type ConversationRecord } from './HistorySidebar';
 import BrandMark from './BrandMark';
-import { getAssistantStatus, sendToAssistant, type AssistantMessage } from '../services/assistant';
+import { getAnalysisSummary, getAssistantStatus, sendToAssistant, type AssistantMessage } from '../services/assistant';
 
 const conversationsKey = 'morshed-conversations-v1';
 const timerKey = 'morshed-study-timer-v1';
@@ -130,6 +130,9 @@ export default function ChatPanel() {
   const [quizMode, setQuizMode] = useState(false);
   const [showTimerCard, setShowTimerCard] = useState(false);
   const [timerSetupPending, setTimerSetupPending] = useState(false);
+  const [expandedThinking, setExpandedThinking] = useState(false);
+  const [analysisStatus, setAnalysisStatus] = useState('');
+  const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null);
   const [timerName, setTimerName] = useState('');
   const [timerMinutes, setTimerMinutes] = useState('');
   const [activeTimer, setActiveTimer] = useState<ActiveTimer | null>(loadTimer);
@@ -137,6 +140,7 @@ export default function ChatPanel() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const conversationRef = useRef<HTMLDivElement>(null);
+  const copiedTimeoutRef = useRef<number | null>(null);
   const currentConversation = sessions.find((conversation) => conversation.id === activeId);
   const messages = currentConversation?.messages ?? [];
   const sortedSessions = useMemo(() => [...sessions].sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt), [sessions]);
@@ -161,7 +165,11 @@ export default function ChatPanel() {
 
   useEffect(() => {
     conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages, isSending]);
+  }, [messages, isSending, analysisStatus]);
+
+  useEffect(() => () => {
+    if (copiedTimeoutRef.current !== null) window.clearTimeout(copiedTimeoutRef.current);
+  }, []);
 
   const appendToConversation = useCallback((conversationId: string, additions: AssistantMessage[]) => {
     setSessions((current) => current.map((conversation) => conversation.id === conversationId
@@ -207,6 +215,36 @@ export default function ChatPanel() {
     textareaRef.current?.focus();
   };
 
+  const copyMessage = async (text: string, messageKey: string) => {
+    let copied = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      }
+    } catch {
+      // استخدم طريقة النسخ الاحتياطية للمتصفحات التي تمنع واجهة الحافظة.
+    }
+    if (!copied) {
+      const temporaryInput = document.createElement('textarea');
+      temporaryInput.value = text;
+      temporaryInput.setAttribute('readonly', '');
+      temporaryInput.style.position = 'fixed';
+      temporaryInput.style.opacity = '0';
+      document.body.appendChild(temporaryInput);
+      temporaryInput.select();
+      try { copied = document.execCommand('copy'); } catch { copied = false; }
+      temporaryInput.remove();
+    }
+    if (!copied) {
+      setNotice('تعذّر نسخ الرسالة. حاول تاني.');
+      return;
+    }
+    setCopiedMessageKey(messageKey);
+    if (copiedTimeoutRef.current !== null) window.clearTimeout(copiedTimeoutRef.current);
+    copiedTimeoutRef.current = window.setTimeout(() => setCopiedMessageKey(null), 1600);
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = draft.trim();
@@ -223,6 +261,7 @@ export default function ChatPanel() {
     setNotice('');
     setDraft('');
     setIsSending(true);
+    setAnalysisStatus('');
     saveUserMessage(conversationId, message);
 
     if (asksForTimer) {
@@ -267,12 +306,24 @@ export default function ChatPanel() {
     }
 
     try {
-      const reply = await sendToAssistant(message, priorMessages, startsQuiz || quizMode ? 'quiz' : 'chat');
-      appendToConversation(conversationId, [{ role: 'model', text: reply }]);
+      const mode = startsQuiz || quizMode ? 'quiz' : 'chat';
+      let analysis = '';
+      if (expandedThinking) {
+        setAnalysisStatus('راشد بيحلل سؤالك...');
+        try {
+          analysis = (await getAnalysisSummary(message, priorMessages)).slice(0, 900);
+        } catch {
+          analysis = '';
+        }
+        setAnalysisStatus('راشد بيرتّب الإجابة الموسّعة...');
+      }
+      const reply = await sendToAssistant(message, priorMessages, mode, expandedThinking);
+      appendToConversation(conversationId, [{ role: 'model', text: reply, ...(analysis ? { analysis } : {}) }]);
     } catch (error) {
       setDraft(message);
       setNotice(error instanceof Error ? error.message : 'حصلت مشكلة مؤقتة. حاول مرة تانية.');
     } finally {
+      setAnalysisStatus('');
       setIsSending(false);
       textareaRef.current?.focus();
     }
@@ -377,15 +428,37 @@ export default function ChatPanel() {
 
         {messages.length > 0 && (
           <div className="conversation" ref={conversationRef} aria-live="polite" aria-label="المحادثة">
-            {messages.map((item, index) => (
-              <article className={`conversation__message conversation__message--${item.role}`} key={`${index}-${item.role}`}>
-                <span className="conversation__speaker">
-                  {item.role === 'user' ? 'أنت' : <><BrandMark compact markOnly /><span>راشد</span></>}
-                </span>
-                <p>{item.text}</p>
-              </article>
-            ))}
-            {isSending && <p className="conversation__typing" role="status"><BrandMark compact markOnly /><span>راشد بيرد…</span></p>}
+            {messages.map((item, index) => {
+              const messageKey = `${index}-${item.role}`;
+              const copyText = item.analysis ? `ملخص التحليل:\n${item.analysis}\n\n${item.text}` : item.text;
+              return (
+                <article className={`conversation__message conversation__message--${item.role}`} key={messageKey}>
+                  <div className="conversation__message-head">
+                    <span className="conversation__speaker">
+                      {item.role === 'user' ? 'أنت' : <><BrandMark compact markOnly /><span>راشد</span></>}
+                    </span>
+                    <button className="conversation__copy" type="button" onClick={() => void copyMessage(copyText, messageKey)} aria-label={copiedMessageKey === messageKey ? 'تم نسخ الرسالة' : 'نسخ الرسالة'} title={copiedMessageKey === messageKey ? 'تم النسخ' : 'نسخ'}>
+                      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="12" height="13" rx="2" stroke="currentColor" strokeWidth="1.6" /><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h2" stroke="currentColor" strokeWidth="1.6" /></svg>
+                      <span>{copiedMessageKey === messageKey ? 'تم النسخ' : 'نسخ'}</span>
+                    </button>
+                  </div>
+                  {item.analysis && (
+                    <aside className="analysis-summary" aria-label="ملخص التحليل">
+                      <div className="analysis-summary__heading"><span>ملخص التحليل</span><span>تفكير موسّع</span></div>
+                      <p>{item.analysis}</p>
+                    </aside>
+                  )}
+                  <p>{item.text}</p>
+                </article>
+              );
+            })}
+            {analysisStatus && (
+              <aside className="analysis-progress" role="status" aria-live="polite">
+                <span className="analysis-progress__spark" aria-hidden="true">✧</span>
+                <div><strong>{analysisStatus}</strong><p>بيرتب أهم جوانب السؤال قبل الإجابة.</p></div>
+              </aside>
+            )}
+            {isSending && !analysisStatus && <p className="conversation__typing" role="status"><BrandMark compact markOnly /><span>راشد بيرد…</span></p>}
           </div>
         )}
 
@@ -444,11 +517,15 @@ export default function ChatPanel() {
           <div className="composer__toolbar">
             <div className="composer__status" id="composer-status"><span className={`status-dot${isConfigured ? ' status-dot--ready' : ''}`} aria-hidden="true" /><span>{isConfigured ? 'راشد جاهز للمحادثة' : 'المحادثة غير متاحة حاليًا'}</span></div>
             <div className="composer__actions">
+              <button className={`thinking-toggle${expandedThinking ? ' thinking-toggle--active' : ''}`} type="button" onClick={() => setExpandedThinking((enabled) => !enabled)} aria-pressed={expandedThinking} title="يعرض ملخص التحليل والخطوات العامة، وليس التفكير الداخلي الحرفي">
+                <span className="thinking-toggle__icon" aria-hidden="true">✧</span><span>تفكير موسّع</span>
+              </button>
               <button className={`timer-toolbar-button${showTimerCard ? ' timer-toolbar-button--active' : ''}`} type="button" onClick={() => setShowTimerCard((visible) => !visible)} aria-label="إظهار المؤقّت"><span aria-hidden="true">◷</span> مؤقّت</button>
               <span className="character-count" aria-live="polite">{draft.length > 0 ? `${draft.length}/4000` : 'راشد'}</span>
               <button className="send-button" type="submit" disabled={!draft.trim() || isSending} aria-label="إرسال إلى راشد" title="إرسال إلى راشد"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 19V5m0 0L6 11m6-6 6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg></button>
             </div>
           </div>
+          {expandedThinking && <p className="analysis-mode-note" id="analysis-mode-note">هعرض ملخص التحليل والنتيجة، مش التفكير الداخلي الحرفي.</p>}
         </form>
 
         {notice && <p className="composer-notice" role="status">{notice}</p>}
